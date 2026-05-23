@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#f7f1e6" />
+  <title>Sign Log · a personal Makaton library</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400;1,9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* -----------------------------------------------------------
+       Sign Log — design tokens
+       Calm, paper-and-ink. One warm accent. No clinical software vibes.
+       ----------------------------------------------------------- */
+    :root {
+      --paper: #f7f1e6;
+      --paper-deep: #efe7d4;
+      --ink: #1a1714;
+      --ink-soft: #4a423a;
+      --muted: #7a6f63;
+      --line: #d9cfb8;
+      --line-soft: #e7dfca;
+      --accent: #b1583c;     /* terracotta */
+      --accent-deep: #8f3f29;
+      --good: #4a7a4a;
+      --bad: #a83a2e;
+      --shadow: 0 1px 2px rgba(26,23,20,.04), 0 6px 16px rgba(26,23,20,.06);
+      --shadow-lift: 0 2px 4px rgba(26,23,20,.06), 0 14px 32px rgba(26,23,20,.10);
+      --radius: 14px;
+      --radius-sm: 8px;
+      --display: "Fraunces", Georgia, serif;
+      --body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); }
+    body {
+      font-family: var(--body);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    input, textarea { -webkit-appearance: none; appearance: none; }
+
+    /* Layout shell */
+    .app {
+      max-width: 720px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 96px; /* room for tab bar */
+    }
+
+    /* Masthead */
+    .mast {
+      padding: 28px 22px 12px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .mast h1 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 28px;
+      letter-spacing: -0.01em;
+      margin: 0;
+      line-height: 1.1;
+    }
+    .mast h1 em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 400;
+    }
+    .mast p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    /* Views */
+    .view { display: none; padding: 22px; flex: 1; }
+    .view.is-active { display: block; }
+
+    /* Section labels */
+    .label-mono {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    /* Capture stage */
+    .stage {
+      position: relative;
+      aspect-ratio: 3 / 4;
+      width: 100%;
+      background: #111;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-lift);
+    }
+    .stage video,
+    .stage canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* mirror for natural feedback */
+    }
+    .stage video { z-index: 1; background: #000; }
+    .stage canvas { z-index: 2; pointer-events: none; }
+
+    .stage-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+    }
+    .stage-top {
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .pill {
+      background: rgba(247,241,230,.92);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 6px 10px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .2s;
+    }
+    .pill.is-detecting .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(74,122,74,.18); }
+    .pill.is-recording .dot { background: var(--bad); animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .6; transform: scale(.85); }
+    }
+
+    .stage-bottom {
+      margin-top: auto;
+      padding: 18px 14px 18px;
+      background: linear-gradient(to top, rgba(0,0,0,.55), transparent);
+      display: flex;
+      justify-content: center;
+      pointer-events: auto;
+    }
+
+    /* The big record button */
+    .rec {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      border: 4px solid rgba(255,255,255,.85);
+      background: var(--accent);
+      box-shadow: 0 4px 20px rgba(0,0,0,.35);
+      padding: 0;
+      transition: transform .12s, background .2s;
+      position: relative;
+    }
+    .rec:active { transform: scale(.93); }
+    .rec.is-recording {
+      background: var(--paper);
+    }
+    .rec.is-recording::after {
+      content: "";
+      position: absolute;
+      inset: 22px;
+      background: var(--bad);
+      border-radius: 6px;
+    }
+    .rec[disabled] { opacity: .5; }
+
+    /* Helper text */
+    .helper {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .helper code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--paper-deep);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* Settings row */
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 18px;
+      padding: 12px 14px;
+      background: var(--paper-deep);
+      border-radius: var(--radius-sm);
+    }
+    .row label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .row select, .row input[type="number"] {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 10px;
+      flex: 1;
+    }
+
+    /* Review screen */
+    .review-stage {
+      position: relative;
+      aspect-ratio: 3 / 4;
+      width: 100%;
+      background: #111;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .review-stage video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .form {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .field input, .field textarea {
+      background: var(--paper-deep);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 16px;
+      transition: border-color .15s, background .15s;
+      width: 100%;
+    }
+    .field input:focus, .field textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: var(--paper);
+    }
+    .field textarea { resize: vertical; min-height: 84px; font-family: inherit; }
+
+    /* Buttons */
+    .actions {
+      margin-top: 22px;
+      display: flex;
+      gap: 10px;
+    }
+    .btn {
+      flex: 1;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      font-weight: 600;
+      font-size: 15px;
+      transition: transform .1s, background .15s, border-color .15s;
+      letter-spacing: -0.005em;
+      background: var(--paper-deep);
+      color: var(--ink);
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--ink); color: var(--paper); }
+    .btn-primary:hover { background: var(--accent-deep); }
+    .btn-ghost { background: transparent; color: var(--ink-soft); border-color: var(--line); }
+    .btn-danger { background: transparent; color: var(--bad); border-color: var(--line); }
+    .btn-danger:hover { background: var(--bad); color: var(--paper); border-color: var(--bad); }
+
+    /* Library list */
+    .search {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      background: var(--paper-deep);
+      border: 1px solid transparent;
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
+    .search:focus { outline: none; border-color: var(--accent); background: var(--paper); }
+
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty .big {
+      font-family: var(--display);
+      font-style: italic;
+      font-weight: 400;
+      font-size: 26px;
+      color: var(--ink-soft);
+      margin-bottom: 6px;
+    }
+
+    .lib-list { display: flex; flex-direction: column; gap: 1px; background: var(--line-soft); border-radius: var(--radius-sm); overflow: hidden; }
+    .lib-item {
+      background: var(--paper);
+      padding: 14px 16px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      cursor: pointer;
+      transition: background .12s;
+      border: none;
+      text-align: left;
+      width: 100%;
+    }
+    .lib-item:hover { background: var(--paper-deep); }
+    .lib-item .thumb {
+      width: 56px;
+      height: 72px;
+      border-radius: 6px;
+      background: #222 center/cover;
+      flex: none;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.1);
+    }
+    .lib-item .meta { flex: 1; min-width: 0; }
+    .lib-item .meta h3 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 18px;
+      margin: 0 0 2px;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lib-item .meta .sub {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--mono);
+      letter-spacing: 0.04em;
+    }
+
+    /* Detail */
+    .detail-head {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .icon-btn {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 14px;
+      color: var(--ink-soft);
+    }
+
+    /* Tools */
+    .tool-card {
+      background: var(--paper);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .tool-card h3 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 18px;
+      margin: 0 0 4px;
+    }
+    .tool-card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .stat-row {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .stat {
+      flex: 1;
+      background: var(--paper);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat .n {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 32px;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .stat .l {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Tab bar */
+    .tabbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-width: 720px;
+      margin: 0 auto;
+      background: rgba(247,241,230,.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--line);
+      padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
+      display: flex;
+      justify-content: space-around;
+      z-index: 50;
+    }
+    .tab {
+      background: none;
+      border: none;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: -0.005em;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-weight: 500;
+      transition: color .15s;
+    }
+    .tab.is-active { color: var(--accent); }
+    .tab svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Loader */
+    .loader {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--line);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--ink);
+      color: var(--paper);
+      padding: 12px 18px;
+      border-radius: 999px;
+      font-size: 14px;
+      box-shadow: var(--shadow-lift);
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+    }
+    .toast.is-show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-8px);
+    }
+
+    /* Error banner */
+    .banner {
+      background: #fff3eb;
+      border: 1px solid #e9b8a0;
+      color: #6b2916;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+
+    /* Small breakpoint refinements */
+    @media (min-width: 600px) {
+      .stage, .review-stage { aspect-ratio: 4 / 3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <header class="mast">
+      <h1>Sign <em>Log</em></h1>
+      <p>A personal library of the signs Oscar uses.</p>
+    </header>
+
+    <main>
+
+      <!-- ============= RECORD VIEW ============= -->
+      <section class="view is-active" id="view-record" data-view="record">
+        <div id="record-error" class="banner" hidden></div>
+
+        <div class="stage" id="stage">
+          <video id="preview" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+
+          <div class="stage-overlay">
+            <div class="stage-top">
+              <span class="pill" id="detect-pill"><span class="dot"></span><span id="detect-text">starting camera…</span></span>
+              <span class="pill" id="time-pill" hidden><span class="dot"></span><span id="time-text">0.0s</span></span>
+            </div>
+            <div class="stage-bottom">
+              <button class="rec" id="record-btn" aria-label="Record" disabled></button>
+            </div>
+          </div>
+        </div>
+
+        <p class="helper">Tap the button to start. Recording stops automatically after <code id="dur-display">4s</code>, or tap again to stop sooner.</p>
+
+        <div class="row">
+          <label for="dur-input">Max duration</label>
+          <select id="dur-input">
+            <option value="2000">2 seconds</option>
+            <option value="3000">3 seconds</option>
+            <option value="4000" selected>4 seconds</option>
+            <option value="6000">6 seconds</option>
+            <option value="10000">10 seconds</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- ============= REVIEW VIEW ============= -->
+      <section class="view" id="view-review" data-view="review">
+        <div class="label-mono">Just captured</div>
+        <div class="review-stage">
+          <video id="review-video" autoplay loop playsinline muted></video>
+        </div>
+
+        <div class="form">
+          <div class="field">
+            <label for="label-input">Label — what did he sign?</label>
+            <input type="text" id="label-input" placeholder='e.g. "biscuit" or "biscuit (Oscar\'s version)"' autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="notes-input">Notes (optional)</label>
+            <textarea id="notes-input" placeholder="Context: what he wanted, who he was looking at, your best guess…"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" id="discard-btn">Discard</button>
+          <button class="btn btn-primary" id="save-btn">Save sign</button>
+        </div>
+      </section>
+
+      <!-- ============= LIBRARY VIEW ============= -->
+      <section class="view" id="view-library" data-view="library">
+        <input type="search" class="search" id="search-input" placeholder="Search labels and notes…" />
+        <div id="lib-content"></div>
+      </section>
+
+      <!-- ============= DETAIL VIEW ============= -->
+      <section class="view" id="view-detail" data-view="detail">
+        <div class="detail-head">
+          <button class="icon-btn" id="back-btn">← Library</button>
+          <span class="label-mono" id="detail-date" style="margin: 0;"></span>
+        </div>
+        <div class="review-stage">
+          <video id="detail-video" autoplay loop playsinline muted></video>
+        </div>
+        <div class="form">
+          <div class="field">
+            <label for="detail-label">Label</label>
+            <input type="text" id="detail-label" />
+          </div>
+          <div class="field">
+            <label for="detail-notes">Notes</label>
+            <textarea id="detail-notes"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-danger" id="delete-btn">Delete</button>
+          <button class="btn btn-primary" id="save-edit-btn">Save changes</button>
+        </div>
+      </section>
+
+      <!-- ============= TOOLS VIEW ============= -->
+      <section class="view" id="view-tools" data-view="tools">
+        <div class="stat-row">
+          <div class="stat"><div class="n" id="stat-count">0</div><div class="l">signs logged</div></div>
+          <div class="stat"><div class="n" id="stat-frames">0</div><div class="l">frames captured</div></div>
+        </div>
+
+        <div class="tool-card">
+          <h3>Export — landmarks only</h3>
+          <p>JSON file of every sign's landmark sequence plus labels and notes. No video. Safe to share with collaborators or feed into a model later.</p>
+          <button class="btn btn-primary" id="export-landmarks">Export landmarks JSON</button>
+        </div>
+
+        <div class="tool-card">
+          <h3>Export — full backup</h3>
+          <p>Everything including the original video clips, encoded as base64. Large file. For your own backup, not for sharing.</p>
+          <button class="btn" id="export-full">Export full backup</button>
+        </div>
+
+        <div class="tool-card">
+          <h3>Import</h3>
+          <p>Restore from a previous backup. Imported signs are added to the library; existing signs are kept.</p>
+          <input type="file" id="import-file" accept="application/json" style="margin-bottom: 12px;" />
+        </div>
+
+        <div class="tool-card">
+          <h3>Clear all data</h3>
+          <p>Permanently delete every sign from this device. There is no undo.</p>
+          <button class="btn btn-danger" id="clear-btn">Delete everything</button>
+        </div>
+
+        <div class="tool-card">
+          <h3>About</h3>
+          <p style="margin: 0;">
+            Sign Log v0.1. Built for capturing one child's signs and growing into a Makaton recognition project.
+            Video processing happens entirely on your device — nothing leaves this phone unless you export it yourself.
+          </p>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab is-active" data-tab="record">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>
+        Record
+      </button>
+      <button class="tab" data-tab="library">
+        <svg viewBox="0 0 24 24"><path d="M4 5h13M4 12h13M4 19h13"/><circle cx="20.5" cy="5" r=".5" fill="currentColor"/><circle cx="20.5" cy="12" r=".5" fill="currentColor"/><circle cx="20.5" cy="19" r=".5" fill="currentColor"/></svg>
+        Library
+      </button>
+      <button class="tab" data-tab="tools">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+        Tools
+      </button>
+    </nav>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- =========================================================
+       APP SCRIPT
+       ========================================================= -->
+  <script type="module">
+    // -----------------------------------------------------------
+    // 1. MediaPipe Hand Landmarker (loaded from CDN)
+    // -----------------------------------------------------------
+    // If the import below fails, bump the version. Tested against 0.10.x.
+    const MEDIAPIPE_VERSION = "0.10.22";
+
+    let HandLandmarker, FilesetResolver;
+    try {
+      const mod = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`);
+      HandLandmarker = mod.HandLandmarker;
+      FilesetResolver = mod.FilesetResolver;
+    } catch (err) {
+      showRecordError(`Could not load MediaPipe. Check your network connection, or update the version constant in the script. (${err.message})`);
+      throw err;
+    }
+
+    // -----------------------------------------------------------
+    // 2. State
+    // -----------------------------------------------------------
+    const state = {
+      handLandmarker: null,
+      stream: null,
+      mediaRecorder: null,
+      recordedChunks: [],
+      capturedFrames: [],          // [{t, hands:[{handedness, score, landmarks:[[x,y,z]...]}]}]
+      recordStartedAt: 0,
+      isRecording: false,
+      lastDetection: null,
+      autoStopTimer: null,
+      pending: null,               // { videoBlob, frames, duration, thumbnail }
+      currentDetailId: null,
+      durationMs: 4000,
+    };
+
+    // -----------------------------------------------------------
+    // 3. DOM helpers
+    // -----------------------------------------------------------
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const video = $("#preview");
+    const canvas = $("#overlay");
+    const ctx = canvas.getContext("2d");
+    const recordBtn = $("#record-btn");
+    const detectPill = $("#detect-pill");
+    const detectText = $("#detect-text");
+    const timePill = $("#time-pill");
+    const timeText = $("#time-text");
+
+    function showView(name) {
+      $$(".view").forEach(v => v.classList.toggle("is-active", v.dataset.view === name));
+      $$(".tab").forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
+    }
+
+    function showToast(msg, ms = 2000) {
+      const el = $("#toast");
+      el.textContent = msg;
+      el.classList.add("is-show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.remove("is-show"), ms);
+    }
+
+    function showRecordError(msg) {
+      const el = $("#record-error");
+      el.textContent = msg;
+      el.hidden = false;
+    }
+
+    function setDetectStatus(state) {
+      detectPill.classList.remove("is-detecting", "is-recording");
+      if (state === "detecting") {
+        detectPill.classList.add("is-detecting");
+        detectText.textContent = "hands detected";
+      } else if (state === "recording") {
+        detectPill.classList.add("is-recording");
+        detectText.textContent = "recording";
+      } else if (state === "ready") {
+        detectText.textContent = "ready · sign something";
+      } else if (state === "loading") {
+        detectText.textContent = "loading model…";
+      } else if (state === "camera") {
+        detectText.textContent = "starting camera…";
+      }
+    }
+
+    // -----------------------------------------------------------
+    // 4. IndexedDB
+    // -----------------------------------------------------------
+    const DB_NAME = "signlog";
+    const DB_VERSION = 1;
+    const STORE = "signs";
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(STORE)) {
+            const store = db.createObjectStore(STORE, { keyPath: "id" });
+            store.createIndex("createdAt", "createdAt");
+            store.createIndex("label", "label");
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function dbPut(record) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).put(record);
+        tx.oncomplete = () => resolve(record);
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function dbGetAll() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function dbGet(id) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get(id);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function dbDelete(id) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function dbClear() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    // -----------------------------------------------------------
+    // 5. Camera + MediaPipe init
+    // -----------------------------------------------------------
+    async function initCamera() {
+      try {
+        setDetectStatus("camera");
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        video.srcObject = state.stream;
+        await new Promise(res => {
+          if (video.readyState >= 2) res();
+          else video.onloadedmetadata = () => res();
+        });
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      } catch (err) {
+        if (err.name === "NotAllowedError") {
+          showRecordError("Camera permission was blocked. Allow camera access for this page in your browser settings, then reload.");
+        } else if (err.name === "NotFoundError") {
+          showRecordError("No camera found on this device.");
+        } else if (location.protocol === "file:") {
+          showRecordError("Browsers block camera access on file:// URLs. Serve this folder over http (e.g. `python -m http.server` or VS Code Live Server) and open it via localhost.");
+        } else {
+          showRecordError(`Camera error: ${err.message}`);
+        }
+        throw err;
+      }
+    }
+
+    async function initHandLandmarker() {
+      setDetectStatus("loading");
+      const fileset = await FilesetResolver.forVisionTasks(
+        `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`
+      );
+      state.handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "GPU",
+        },
+        runningMode: "VIDEO",
+        numHands: 2,
+      });
+    }
+
+    // -----------------------------------------------------------
+    // 6. Detection loop
+    // -----------------------------------------------------------
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],          // thumb
+      [0,5],[5,6],[6,7],[7,8],          // index
+      [5,9],[9,10],[10,11],[11,12],     // middle
+      [9,13],[13,14],[14,15],[15,16],   // ring
+      [13,17],[17,18],[18,19],[19,20],  // pinky
+      [0,17],                           // palm base
+    ];
+
+    function drawLandmarks(results) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!results.landmarks || results.landmarks.length === 0) return;
+      ctx.save();
+      for (let h = 0; h < results.landmarks.length; h++) {
+        const lm = results.landmarks[h];
+        const handedness = results.handedness?.[h]?.[0]?.categoryName || "?";
+        const color = handedness === "Left" ? "#b1583c" : "#4a7a4a";
+        // bones
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        for (const [a, b] of HAND_CONNECTIONS) {
+          ctx.beginPath();
+          ctx.moveTo(lm[a].x * canvas.width, lm[a].y * canvas.height);
+          ctx.lineTo(lm[b].x * canvas.width, lm[b].y * canvas.height);
+          ctx.stroke();
+        }
+        // joints
+        ctx.fillStyle = "#f7f1e6";
+        for (const p of lm) {
+          ctx.beginPath();
+          ctx.arc(p.x * canvas.width, p.y * canvas.height, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    let rafId = null;
+    let lastVideoTime = -1;
+    function loop() {
+      if (!state.handLandmarker || video.readyState < 2) {
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+      const now = performance.now();
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const results = state.handLandmarker.detectForVideo(video, now);
+        state.lastDetection = results;
+        drawLandmarks(results);
+
+        const hasHands = results.landmarks && results.landmarks.length > 0;
+        if (!state.isRecording) {
+          setDetectStatus(hasHands ? "detecting" : "ready");
+        } else {
+          // capture this frame
+          const frame = {
+            t: Math.round(now - state.recordStartedAt),
+            hands: hasHands ? results.landmarks.map((lm, i) => ({
+              handedness: results.handedness[i][0].categoryName,
+              score: results.handedness[i][0].score,
+              landmarks: lm.map(p => [+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)]),
+            })) : [],
+          };
+          state.capturedFrames.push(frame);
+          const elapsed = (now - state.recordStartedAt) / 1000;
+          timeText.textContent = `${elapsed.toFixed(1)}s`;
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // -----------------------------------------------------------
+    // 7. Recording
+    // -----------------------------------------------------------
+    function pickMimeType() {
+      const candidates = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4",
+      ];
+      for (const c of candidates) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c;
+      }
+      return "";
+    }
+
+    function startRecording() {
+      if (!state.stream) return;
+      state.recordedChunks = [];
+      state.capturedFrames = [];
+      const mime = pickMimeType();
+      state.mediaRecorder = new MediaRecorder(state.stream, mime ? { mimeType: mime } : undefined);
+      state.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) state.recordedChunks.push(e.data);
+      };
+      state.mediaRecorder.onstop = onRecordingStopped;
+      state.mediaRecorder.start();
+      state.recordStartedAt = performance.now();
+      state.isRecording = true;
+      recordBtn.classList.add("is-recording");
+      timePill.hidden = false;
+      setDetectStatus("recording");
+
+      clearTimeout(state.autoStopTimer);
+      state.autoStopTimer = setTimeout(stopRecording, state.durationMs);
+    }
+
+    function stopRecording() {
+      if (!state.isRecording) return;
+      clearTimeout(state.autoStopTimer);
+      try { state.mediaRecorder.stop(); } catch {}
+    }
+
+    async function onRecordingStopped() {
+      state.isRecording = false;
+      recordBtn.classList.remove("is-recording");
+      timePill.hidden = true;
+      setDetectStatus("ready");
+
+      const duration = performance.now() - state.recordStartedAt;
+      const mime = state.mediaRecorder.mimeType || "video/webm";
+      const blob = new Blob(state.recordedChunks, { type: mime });
+
+      // capture thumbnail from mid-point
+      const thumb = await captureThumbnail();
+
+      state.pending = {
+        videoBlob: blob,
+        frames: state.capturedFrames.slice(),
+        duration,
+        thumbnail: thumb,
+      };
+
+      showReview();
+    }
+
+    async function captureThumbnail() {
+      const c = document.createElement("canvas");
+      c.width = 160;
+      c.height = 213;
+      const cx = c.getContext("2d");
+      cx.save();
+      cx.translate(c.width, 0);
+      cx.scale(-1, 1); // mirror to match preview
+      const vRatio = video.videoWidth / video.videoHeight;
+      const cRatio = c.width / c.height;
+      let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
+      if (vRatio > cRatio) {
+        sw = video.videoHeight * cRatio;
+        sx = (video.videoWidth - sw) / 2;
+      } else {
+        sh = video.videoWidth / cRatio;
+        sy = (video.videoHeight - sh) / 2;
+      }
+      cx.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      cx.restore();
+      return c.toDataURL("image/jpeg", 0.7);
+    }
+
+    // -----------------------------------------------------------
+    // 8. Review + Save
+    // -----------------------------------------------------------
+    function showReview() {
+      const url = URL.createObjectURL(state.pending.videoBlob);
+      const v = $("#review-video");
+      v.src = url;
+      v.play().catch(()=>{});
+      $("#label-input").value = "";
+      $("#notes-input").value = "";
+      showView("review");
+      setTimeout(() => $("#label-input").focus(), 200);
+    }
+
+    async function saveSign() {
+      const label = $("#label-input").value.trim();
+      if (!label) {
+        showToast("Please add a label first");
+        $("#label-input").focus();
+        return;
+      }
+      const record = {
+        id: crypto.randomUUID(),
+        label,
+        notes: $("#notes-input").value.trim(),
+        createdAt: new Date().toISOString(),
+        duration: state.pending.duration,
+        frames: state.pending.frames,
+        thumbnail: state.pending.thumbnail,
+        videoBlob: state.pending.videoBlob,
+        videoMimeType: state.pending.videoBlob.type,
+      };
+      await dbPut(record);
+      state.pending = null;
+      showToast(`Saved: ${label}`);
+      showView("record");
+    }
+
+    function discardSign() {
+      const v = $("#review-video");
+      if (v.src) URL.revokeObjectURL(v.src);
+      v.src = "";
+      state.pending = null;
+      showView("record");
+    }
+
+    // -----------------------------------------------------------
+    // 9. Library
+    // -----------------------------------------------------------
+    async function renderLibrary(filter = "") {
+      const all = await dbGetAll();
+      all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      const f = filter.toLowerCase().trim();
+      const filtered = f
+        ? all.filter(s => s.label.toLowerCase().includes(f) || (s.notes||"").toLowerCase().includes(f))
+        : all;
+
+      const container = $("#lib-content");
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty">
+            <div class="big">${all.length === 0 ? "No signs yet." : "Nothing matches that."}</div>
+            <div>${all.length === 0 ? "Record one to start building the library." : ""}</div>
+          </div>
+        `;
+        return;
+      }
+
+      const list = document.createElement("div");
+      list.className = "lib-list";
+      for (const s of filtered) {
+        const btn = document.createElement("button");
+        btn.className = "lib-item";
+        const date = new Date(s.createdAt);
+        const dateStr = date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+        const frameCount = (s.frames || []).length;
+        btn.innerHTML = `
+          <div class="thumb" style="background-image:url('${s.thumbnail || ""}')"></div>
+          <div class="meta">
+            <h3></h3>
+            <div class="sub">${dateStr} · ${frameCount} frames</div>
+          </div>
+        `;
+        btn.querySelector("h3").textContent = s.label;
+        btn.addEventListener("click", () => openDetail(s.id));
+        list.appendChild(btn);
+      }
+      container.replaceChildren(list);
+    }
+
+    // -----------------------------------------------------------
+    // 10. Detail / Edit / Delete
+    // -----------------------------------------------------------
+    async function openDetail(id) {
+      const s = await dbGet(id);
+      if (!s) return;
+      state.currentDetailId = id;
+      const v = $("#detail-video");
+      if (v.src) URL.revokeObjectURL(v.src);
+      if (s.videoBlob) {
+        v.src = URL.createObjectURL(s.videoBlob);
+        v.play().catch(()=>{});
+      }
+      $("#detail-label").value = s.label;
+      $("#detail-notes").value = s.notes || "";
+      const date = new Date(s.createdAt);
+      $("#detail-date").textContent = date.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      showView("detail");
+    }
+
+    async function saveEdit() {
+      const s = await dbGet(state.currentDetailId);
+      if (!s) return;
+      const label = $("#detail-label").value.trim();
+      if (!label) { showToast("Label can't be empty"); return; }
+      s.label = label;
+      s.notes = $("#detail-notes").value.trim();
+      await dbPut(s);
+      showToast("Saved");
+      await renderLibrary($("#search-input").value);
+      showView("library");
+    }
+
+    async function deleteSign() {
+      if (!confirm("Delete this sign? This can't be undone.")) return;
+      await dbDelete(state.currentDetailId);
+      state.currentDetailId = null;
+      await renderLibrary($("#search-input").value);
+      showView("library");
+      showToast("Deleted");
+    }
+
+    // -----------------------------------------------------------
+    // 11. Tools — stats + export + import + clear
+    // -----------------------------------------------------------
+    async function renderStats() {
+      const all = await dbGetAll();
+      const totalFrames = all.reduce((sum, s) => sum + (s.frames || []).length, 0);
+      $("#stat-count").textContent = all.length;
+      $("#stat-frames").textContent = totalFrames.toLocaleString();
+    }
+
+    async function blobToBase64(blob) {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(blob);
+      });
+    }
+
+    function base64ToBlob(b64, type) {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return new Blob([arr], { type });
+    }
+
+    async function exportLandmarks() {
+      const all = await dbGetAll();
+      const out = {
+        format: "signlog-landmarks",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        signs: all.map(s => ({
+          id: s.id,
+          label: s.label,
+          notes: s.notes || "",
+          createdAt: s.createdAt,
+          duration: s.duration,
+          frames: s.frames,
+        })),
+      };
+      downloadJSON(out, `signlog-landmarks-${dateStamp()}.json`);
+      showToast(`Exported ${all.length} signs`);
+    }
+
+    async function exportFull() {
+      const all = await dbGetAll();
+      const out = {
+        format: "signlog-full",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        signs: [],
+      };
+      for (const s of all) {
+        let videoBase64 = null;
+        if (s.videoBlob) videoBase64 = await blobToBase64(s.videoBlob);
+        out.signs.push({
+          id: s.id,
+          label: s.label,
+          notes: s.notes || "",
+          createdAt: s.createdAt,
+          duration: s.duration,
+          frames: s.frames,
+          thumbnail: s.thumbnail,
+          videoBase64,
+          videoMimeType: s.videoMimeType,
+        });
+      }
+      downloadJSON(out, `signlog-full-backup-${dateStamp()}.json`);
+      showToast(`Exported ${all.length} signs with video`);
+    }
+
+    function downloadJSON(obj, filename) {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function dateStamp() {
+      const d = new Date();
+      return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
+    }
+
+    async function importJSON(file) {
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.signs || !Array.isArray(data.signs)) throw new Error("Not a valid Sign Log file.");
+        let imported = 0;
+        for (const s of data.signs) {
+          const record = {
+            id: s.id || crypto.randomUUID(),
+            label: s.label,
+            notes: s.notes || "",
+            createdAt: s.createdAt || new Date().toISOString(),
+            duration: s.duration || 0,
+            frames: s.frames || [],
+            thumbnail: s.thumbnail || null,
+            videoBlob: s.videoBase64 ? base64ToBlob(s.videoBase64, s.videoMimeType || "video/webm") : null,
+            videoMimeType: s.videoMimeType || null,
+          };
+          await dbPut(record);
+          imported++;
+        }
+        showToast(`Imported ${imported} signs`);
+        await renderStats();
+        await renderLibrary();
+      } catch (err) {
+        alert(`Import failed: ${err.message}`);
+      }
+    }
+
+    async function clearAll() {
+      if (!confirm("Permanently delete every sign on this device?")) return;
+      if (!confirm("Really? There is no undo.")) return;
+      await dbClear();
+      await renderStats();
+      await renderLibrary();
+      showToast("All cleared");
+    }
+
+    // -----------------------------------------------------------
+    // 12. Event wiring
+    // -----------------------------------------------------------
+    recordBtn.addEventListener("click", () => {
+      if (state.isRecording) stopRecording();
+      else startRecording();
+    });
+
+    $("#dur-input").addEventListener("change", (e) => {
+      state.durationMs = parseInt(e.target.value, 10);
+      $("#dur-display").textContent = `${state.durationMs / 1000}s`;
+    });
+
+    $("#save-btn").addEventListener("click", saveSign);
+    $("#discard-btn").addEventListener("click", discardSign);
+    $("#back-btn").addEventListener("click", () => showView("library"));
+    $("#save-edit-btn").addEventListener("click", saveEdit);
+    $("#delete-btn").addEventListener("click", deleteSign);
+
+    $("#search-input").addEventListener("input", (e) => renderLibrary(e.target.value));
+
+    $("#export-landmarks").addEventListener("click", exportLandmarks);
+    $("#export-full").addEventListener("click", exportFull);
+    $("#clear-btn").addEventListener("click", clearAll);
+    $("#import-file").addEventListener("change", (e) => {
+      if (e.target.files[0]) importJSON(e.target.files[0]);
+      e.target.value = "";
+    });
+
+    $$(".tab").forEach(t => {
+      t.addEventListener("click", () => {
+        const view = t.dataset.tab;
+        showView(view);
+        if (view === "library") renderLibrary($("#search-input").value);
+        if (view === "tools") renderStats();
+      });
+    });
+
+    // -----------------------------------------------------------
+    // 13. Boot
+    // -----------------------------------------------------------
+    async function boot() {
+      try {
+        await initCamera();
+        await initHandLandmarker();
+        recordBtn.disabled = false;
+        setDetectStatus("ready");
+        loop();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    boot();
+
+    // Surface unhandled rejections cleanly
+    window.addEventListener("unhandledrejection", (e) => {
+      console.error("Unhandled:", e.reason);
+    });
+  </script>
+</body>
+</html>
